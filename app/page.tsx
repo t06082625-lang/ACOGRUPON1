@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { ClipboardList, Package, ArrowRight, LogOut, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { registrarUsuario, autenticarUsuario, redefinirSenhaUsuario } from '@/lib/actions'
+import { createClient } from '@/lib/supabase/client'
 
 export default function Dashboard() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -20,10 +20,12 @@ export default function Dashboard() {
   const [successMessage, setSuccessMessage] = useState('')
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('steel_user_id')
-    if (savedUser) {
-      setUserEmail(savedUser)
-    }
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null))
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email ?? null)
+    })
+    return () => listener.subscription.unsubscribe()
   }, [])
 
   const handleAuthSubmit = async (type: 'login' | 'register' | 'forgot') => {
@@ -35,56 +37,45 @@ export default function Dashboard() {
       return
     }
 
+    const supabase = createClient()
     if (type === 'register') {
-      setStep('verify')
-    } else if (type === 'forgot') {
-      setStep('verify_forgot')
-    } else {
-      const result = await autenticarUsuario(email, password)
-      if (result.success && result.user) {
-        localStorage.setItem('steel_user_id', result.user.email)
-        setUserEmail(result.user.email)
-      } else {
-        setMessage(result.error || 'Falha ao autenticar.')
+      const { error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback` },
+      })
+      if (error) setMessage(error.message)
+      else {
+        setSuccessMessage('Enviamos um código de confirmação para seu e-mail.')
+        setStep('verify')
       }
+    } else if (type === 'forgot') {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/reset-password`,
+      })
+      if (error) setMessage('Não foi possível enviar o código. Tente novamente.')
+      else { setSuccessMessage('Enviamos as instruções para seu e-mail.'); setStep('verify_forgot') }
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      if (error) setMessage(error.message.includes('Email not confirmed') ? 'Confirme seu e-mail antes de entrar.' : 'E-mail ou senha inválidos.')
+      else setUserEmail(data.user.email ?? null)
     }
   }
 
   const handleVerifyCode = async () => {
-    if (code.trim() !== '1234') {
-      setMessage('Código inválido. Digite 1234.')
-      return
-    }
-
-    const result = await registrarUsuario(email, password)
-    if (result.success) {
-      localStorage.setItem('steel_user_id', email)
-      setUserEmail(email)
-      setStep('login')
-      clearForm()
-    } else {
-      setMessage(result.error || 'Erro no cadastro.')
-      setStep('register')
-    }
+    const supabase = createClient()
+    const { data, error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'signup' })
+    if (error) setMessage('Código inválido ou expirado. Solicite um novo código.')
+    else { setUserEmail(data.user?.email ?? email); clearForm() }
   }
 
   const handleVerifyForgotCode = async () => {
-    if (code.trim() !== '1234') {
-      setMessage('Código inválido. Digite 1234.')
-      return
-    }
-
-    const result = await redefinirSenhaUsuario(email, password)
-    if (result.success) {
-      setSuccessMessage('Senha atualizada com sucesso! Faça o login.')
-      setStep('login')
-      const tempEmail = email
-      clearForm()
-      setEmail(tempEmail)
-    } else {
-      setMessage(result.error || 'Erro ao alterar.')
-      setStep('forgot')
-    }
+    const supabase = createClient()
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' })
+    if (error) { setMessage('Código inválido ou expirado.'); return }
+    const { error: updateError } = await supabase.auth.updateUser({ password })
+    if (updateError) setMessage('Não foi possível atualizar a senha.')
+    else { setSuccessMessage('Senha atualizada com sucesso! Faça o login.'); await supabase.auth.signOut(); setStep('login'); clearForm() }
   }
 
   const clearForm = () => {
@@ -94,8 +85,8 @@ export default function Dashboard() {
     setMessage('')
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('steel_user_id')
+  const handleLogout = async () => {
+    await createClient().auth.signOut()
     setUserEmail(null)
     clearForm()
     setSuccessMessage('')
