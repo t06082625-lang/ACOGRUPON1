@@ -1,107 +1,249 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { PlusCircle, ClipboardList, LogOut } from 'lucide-react'
+import Link from 'next/link'
+import Image from 'next/image'
+import { ClipboardList, Package, ArrowRight, LogOut, KeyRound } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { registrarUsuario, autenticarUsuario, redefinirSenhaUsuario } from '@/lib/actions'
 
 export default function Dashboard() {
-  const router = useRouter()
-  
-  // Estados para gerenciar o operador conectado
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [userName, setUserName] = useState<string | null>(null)
+  const [step, setStep] = useState<'login' | 'register' | 'forgot' | 'verify' | 'verify_forgot'>('login')
+  
+  // Inputs de formulário
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [message, setMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
 
-  // Resgata os dados do operador salvos no localStorage ao carregar a página
   useEffect(() => {
-    const storedEmail = localStorage.getItem('steel_user_id') // Pega o e-mail/ID logado
-    if (storedEmail) {
-      setUserEmail(storedEmail)
-      // Extrai a primeira parte do e-mail para exibir como nome amigável (ex: LUIZ CARLOS)
-      const namePart = storedEmail.split('@')[0].replace(/\./g, ' ').toUpperCase()
-      setUserName(namePart)
-    } else {
-      // Se não houver operador logado, joga para a tela de login
-      router.push('/login')
+    const savedUser = localStorage.getItem('steel_user_id')
+    if (savedUser) {
+      setUserEmail(savedUser)
     }
-  }, [router])
+  }, [])
 
-  const handleSignOut = () => {
+  const handleAuthSubmit = async (type: 'login' | 'register' | 'forgot') => {
+    setMessage('')
+    setSuccessMessage('')
+
+    if (!email.trim() || !password.trim()) {
+      setMessage('Preencha todos os campos obrigatórios.')
+      return
+    }
+
+    if (type === 'register') {
+      setStep('verify')
+    } else if (type === 'forgot') {
+      setStep('verify_forgot')
+    } else {
+      const result = await autenticarUsuario(email, password)
+      if (result.success && result.user) {
+        localStorage.setItem('steel_user_id', result.user.email)
+        setUserEmail(result.user.email)
+      } else {
+        setMessage(result.error || 'Falha ao autenticar.')
+      }
+    }
+  }
+
+  const handleVerifyCode = async () => {
+    if (code.trim() !== '1234') {
+      setMessage('Código inválido. Digite 1234.')
+      return
+    }
+
+    const result = await registrarUsuario(email, password)
+    if (result.success) {
+      localStorage.setItem('steel_user_id', email)
+      setUserEmail(email)
+      setStep('login')
+      clearForm()
+    } else {
+      setMessage(result.error || 'Erro no cadastro.')
+      setStep('register')
+    }
+  }
+
+  const handleVerifyForgotCode = async () => {
+    if (code.trim() !== '1234') {
+      setMessage('Código inválido. Digite 1234.')
+      return
+    }
+
+    const result = await redefinirSenhaUsuario(email, password)
+    if (result.success) {
+      setSuccessMessage('Senha atualizada com sucesso! Faça o login.')
+      setStep('login')
+      const tempEmail = email
+      clearForm()
+      setEmail(tempEmail)
+    } else {
+      setMessage(result.error || 'Erro ao alterar.')
+      setStep('forgot')
+    }
+  }
+
+  const clearForm = () => {
+    setEmail('')
+    setPassword('')
+    setCode('')
+    setMessage('')
+  }
+
+  const handleLogout = () => {
     localStorage.removeItem('steel_user_id')
     setUserEmail(null)
-    setUserName(null)
-    router.push('/login')
+    clearForm()
+    setSuccessMessage('')
+    setStep('login')
   }
 
   return (
-    <main className="min-h-screen bg-[#09090b] text-white flex flex-col items-center justify-center p-4 selection:bg-amber-500/30">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6">
       
-      {/* Título Principal - Grupo N1 */}
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold tracking-wider text-white uppercase sm:text-4xl">
-          GRUPO N1
-        </h1>
-        <p className="text-xs tracking-[0.3em] font-semibold text-[#f59e0b] uppercase mt-1">
-          EMPREENDIMENTOS
-        </p>
-        <div className="w-16 h-[1px] bg-[#f59e0b] mx-auto mt-3 opacity-70" />
-      </div>
+      {/* SE NÃO ESTIVER LOGADO: Caixa de login no mesmo padrão de design */}
+      {!userEmail ? (
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-6">
+              <Image src="/images/logo-n1-white.png" alt="Grupo N1 Empreendimentos" width={220} height={140} className="object-contain" priority />
+            </div>
+            <div className="h-1 w-24 bg-gradient-to-r from-primary to-primary/50 mx-auto mb-4 rounded-full" />
+          </div>
 
-      {/* Barra do Operador Conectado */}
-      {userEmail && (
-        <div className="bg-[#121214] border border-[#27272a] rounded-full px-5 py-2 flex items-center gap-3 text-sm text-[#a1a1aa] mb-10 shadow-lg max-w-full overflow-hidden text-ellipsis">
-          <span className="w-2 h-2 rounded-full bg-[#10b981] shrink-0" />
-          <span className="truncate">
-            Operador: <strong className="text-white font-medium">{userName}</strong>{' '}
-            <span className="text-[#71717a] hidden sm:inline">({userEmail})</span>
-          </span>
-          <span className="text-[#27272a]">|</span>
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-1 text-xs font-medium text-red-400 hover:text-red-300 transition-colors shrink-0"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Sair
-          </button>
+          <div className="bg-card border border-border rounded-xl p-8 shadow-xl text-left space-y-4">
+            {message && <p className="text-sm text-red-500 font-medium text-center bg-red-500/10 py-2 rounded border border-red-500/20">{message}</p>}
+            {successMessage && <p className="text-sm text-emerald-500 font-medium text-center bg-emerald-500/10 py-2 rounded border border-emerald-500/20">{successMessage}</p>}
+
+            {/* FLUXO DE LOGIN */}
+            {step === 'login' && (
+              <>
+                <h2 className="text-xl font-semibold text-foreground text-center">Acessar Painel</h2>
+                <Input type="email" placeholder="E-mail corporativo" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-background py-5" />
+                <Input type="password" placeholder="Sua senha" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-background py-5" />
+                <div className="text-right">
+                  <button onClick={() => { setStep('forgot'); clearForm() }} className="text-xs text-muted-foreground hover:text-primary transition-colors">Esqueceu a senha?</button>
+                </div>
+                <Button onClick={() => handleAuthSubmit('login')} className="w-full bg-primary font-semibold py-5 flex items-center justify-center gap-2">Entrar <ArrowRight className="w-4 h-4" /></Button>
+                <p className="text-xs text-center text-muted-foreground pt-2">Não possui conta? <button onClick={() => { setStep('register'); clearForm() }} className="text-primary hover:underline font-medium">Cadastre-se aqui</button></p>
+              </>
+            )}
+
+            {/* FLUXO DE CADASTRO */}
+            {step === 'register' && (
+              <>
+                <h2 className="text-xl font-semibold text-foreground text-center">Criar Conta</h2>
+                <Input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-background py-5" />
+                <Input type="password" placeholder="Criar Senha" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-background py-5" />
+                <Button onClick={() => handleAuthSubmit('register')} className="w-full bg-primary font-semibold py-5 flex items-center justify-center gap-2">Avançar <ArrowRight className="w-4 h-4" /></Button>
+                <p className="text-xs text-center text-muted-foreground pt-2">Já tem registro? <button onClick={() => { setStep('login'); clearForm() }} className="text-primary hover:underline font-medium">Voltar para o Login</button></p>
+              </>
+            )}
+
+            {/* ESQUECI MINHA SENHA */}
+            {step === 'forgot' && (
+              <>
+                <h2 className="text-xl font-semibold text-foreground text-center flex items-center justify-center gap-2"><KeyRound className="w-5 h-5 text-primary" /> Nova Senha</h2>
+                <Input type="email" placeholder="Informe seu E-mail" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-background py-5" />
+                <Input type="password" placeholder="Digite a Nova Senha" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-background py-5" />
+                <Button onClick={() => handleAuthSubmit('forgot')} className="w-full bg-primary font-semibold py-5 flex items-center justify-center gap-2">Trocar Senha <ArrowRight className="w-4 h-4" /></Button>
+                <p className="text-xs text-center text-muted-foreground pt-2"><button onClick={() => { setStep('login'); clearForm() }} className="text-muted-foreground hover:underline">Voltar</button></p>
+              </>
+            )}
+
+            {/* VALIDAÇÃO DE CÓDIGO (CADASTRO) */}
+            {step === 'verify' && (
+              <div className="text-center space-y-4">
+                <h2 className="text-xl font-semibold text-foreground">Código de Confirmação</h2>
+                <p className="text-xs text-muted-foreground">Digite o código de validação padrão (1234) para confirmar.</p>
+                <Input type="text" maxLength={4} placeholder="0 0 0 0" value={code} onChange={(e) => setCode(e.target.value)} className="bg-background text-center text-lg py-5 tracking-widest font-mono" />
+                <Button onClick={handleVerifyCode} className="w-full bg-primary font-semibold py-5">Ativar Conta</Button>
+              </div>
+            )}
+
+            {/* VALIDAÇÃO DE CÓDIGO (SENHA) */}
+            {step === 'verify_forgot' && (
+              <div className="text-center space-y-4">
+                <h2 className="text-xl font-semibold text-foreground">Aprovar Alteração</h2>
+                <p className="text-xs text-muted-foreground">Digite o código de validação padrão (1234) para salvar a senha.</p>
+                <Input type="text" maxLength={4} placeholder="0 0 0 0" value={code} onChange={(e) => setCode(e.target.value)} className="bg-background text-center text-lg py-5 tracking-widest font-mono" />
+                <Button onClick={handleVerifyForgotCode} className="w-full bg-primary font-semibold py-5">Confirmar Nova Senha</Button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* SE LOGADO: SEU DESIGNER ORIGINAL 100% INTACTO */
+        <div className="max-w-4xl w-full">
+          {/* Header com Logo */}
+          <div className="text-center mb-12 relative">
+            
+            {/* Botão discreto de sair integrado para não estragar o visual */}
+            <div className="absolute top-0 right-0">
+              <button onClick={handleLogout} className="text-xs text-muted-foreground hover:text-red-500 flex items-center gap-1.5 transition-colors bg-card border border-border px-3 py-1.5 rounded-lg shadow-sm">
+                <LogOut className="w-3.5 h-3.5" /> Sair ({userEmail})
+              </button>
+            </div>
+
+            <div className="flex justify-center mb-6">
+              <Image
+                src="/images/logo-n1-white.png"
+                alt="Grupo N1 Empreendimentos"
+                width={220}
+                height={140}
+                className="object-contain"
+                priority
+              />
+            </div>
+            <div className="h-1 w-24 bg-gradient-to-r from-primary to-primary/50 mx-auto mb-4 rounded-full" />
+            <p className="text-muted-foreground text-lg">
+              Sistema de Cadastro e Conferência de Aço
+            </p>
+          </div>
+
+          {/* Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Cadastrar Aço */}
+            <Link href="/cadastro" className="group">
+              <div className="bg-card border border-border rounded-xl p-8 transition-all duration-300 hover:border-primary hover:shadow-lg hover:shadow-primary/10">
+                <div className="flex flex-col items-center text-center gap-4">
+                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                    <Package className="w-8 h-8 text-primary" />
+                  </div>
+                  <h2 className="text-2xl font-semibold text-foreground">Cadastrar Aço</h2>
+                  <p className="text-muted-foreground">
+                    Cadastre novos itens de aço no sistema com expansão automática de faixas
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            {/* Conferir Estoque */}
+            <Link href="/conferencia" className="group">
+              <div className="bg-card border border-border rounded-xl p-8 transition-all duration-300 hover:border-primary hover:shadow-lg hover:shadow-primary/10">
+                <div className="flex flex-col items-center text-center gap-4">
+                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                    <ClipboardList className="w-8 h-8 text-primary" />
+                  </div>
+                  <h2 className="text-2xl font-semibold text-foreground">Conferir Estoque</h2>
+                  <p className="text-muted-foreground">
+                    Confira e marque os itens de aço cadastrados no estoque
+                  </p>
+                </div>
+              </div>
+            </Link>
+          </div>
+
+          {/* Footer */}
+          <footer className="mt-12 text-center text-muted-foreground text-sm">
+            <p>Sistema desenvolvido para N1 Construtora</p>
+          </footer>
         </div>
       )}
-
-      {/* Grid de Cards (Menu Principal) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-3xl px-4">
-        
-        {/* Card 1: Cadastrar Lotes */}
-        <div 
-          onClick={() => router.push('/cadastro')}
-          className="group bg-[#121214] border border-[#27272a] hover:border-[#f59e0b]/40 rounded-2xl p-8 flex flex-col items-center text-center cursor-pointer transition-all duration-300 hover:-translate-y-0.5"
-        >
-          <div className="w-12 h-12 bg-[#f59e0b]/10 rounded-full flex items-center justify-center mb-5 border border-[#f59e0b]/20 group-hover:scale-105 transition-transform">
-            <PlusCircle className="w-6 h-6 text-[#f59e0b]" />
-          </div>
-          <h3 className="text-xl font-semibold text-white mb-2">
-            Cadastrar Lotes
-          </h3>
-          <p className="text-sm text-[#71717a] max-w-[250px]">
-            Cadastre novos itens de aço no seu banco de dados exclusivo.
-          </p>
-        </div>
-
-        {/* Card 2: Conferir Estoque */}
-        <div 
-          onClick={() => router.push('/conferencia')}
-          className="group bg-[#121214] border border-[#27272a] hover:border-[#f59e0b]/40 rounded-2xl p-8 flex flex-col items-center text-center cursor-pointer transition-all duration-300 hover:-translate-y-0.5"
-        >
-          <div className="w-12 h-12 bg-[#f59e0b]/10 rounded-full flex items-center justify-center mb-5 border border-[#f59e0b]/20 group-hover:scale-105 transition-transform">
-            <ClipboardList className="w-6 h-6 text-[#f59e0b]" />
-          </div>
-          <h3 className="text-xl font-semibold text-white mb-2">
-            Conferir Estoque
-          </h3>
-          <p className="text-sm text-[#71717a] max-w-[250px]">
-            Abra e confira suas peças através do buscador inteligente.
-          </p>
-        </div>
-
-      </div>
-
     </main>
   )
 }
