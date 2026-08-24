@@ -37,8 +37,9 @@ export default function Dashboard() {
       return
     }
 
-    const supabase = createClient()
-    if (type === 'register') {
+    try {
+      const supabase = createClient()
+      if (type === 'register') {
       const { error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -59,6 +60,10 @@ export default function Dashboard() {
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
       if (error) setMessage(error.message.includes('Email not confirmed') ? 'Confirme seu e-mail antes de entrar.' : 'E-mail ou senha inválidos.')
       else setUserEmail(data.user.email ?? null)
+      }
+    } catch (error) {
+      console.error('[v0] Erro de comunicação com o Supabase:', error)
+      setMessage('Não foi possível conectar ao servidor. Verifique a conexão e tente novamente.')
     }
   }
 
