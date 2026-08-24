@@ -76,25 +76,35 @@ export default function ConferenciaPage() {
   const handleSearch = async () => {
     if (!searchInput.trim()) return
 
-    const searchTerm = searchInput.trim().toUpperCase().replace(/\./g, '')
-    const match = searchTerm.match(/^(.+?)(\d+)$/)
+    const searchTerm = searchInput.trim().toUpperCase()
+    const normalizedSearch = searchTerm.replace(/[^A-Z0-9]/g, '')
+    const match = normalizedSearch.match(/^(.+?)(\d+)$/)
     
     if (!match) {
-      showMessage('error', 'Formato inválido. Use: NOME + NÚMERO (ex: 0281, 028D3)')
+      showMessage('error', 'Formato inválido. Use NOME + NÚMERO (ex: 0281, 028D3)')
       return
     }
     
     const [, nomeBusca, osNumBusca] = match
-    
-    const index = items.findIndex(item => {
-      const nomeItem = item.os.toUpperCase().replace(/\./g, '')
-      const osNumItem = item.arquivo.toUpperCase().replace(/^HOME\./, '').replace(/\./g, '')
-      
-      const nomeMatches = nomeItem === nomeBusca || nomeItem.includes(nomeBusca)
-      const osMatches = osNumItem === osNumBusca
-      
-      return nomeMatches && osMatches && !item.conferido
-    })
+    const normalize = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const extractOsNumber = (value: string) => {
+      const clean = normalize(value).replace(/^HOME/, '')
+      return clean.match(/\d+$/)?.[0] ?? clean
+    }
+    const matchesItem = (item: ExpandedItem) => {
+      // Cadastro: arquivo = nome (ex.: 028D) e os = número (ex.: 3).
+      // A checagem também aceita dados antigos invertidos.
+      const arquivo = normalize(item.arquivo)
+      const os = normalize(item.os)
+      const arquivoOs = extractOsNumber(item.arquivo)
+      const osOs = extractOsNumber(item.os)
+      return (
+        (arquivo === nomeBusca && osOs === osNumBusca) ||
+        (os === nomeBusca && arquivoOs === osNumBusca)
+      )
+    }
+
+    const index = items.findIndex(item => matchesItem(item) && !item.conferido)
 
     if (index !== -1) {
       const newItems = [...items]
@@ -110,13 +120,7 @@ export default function ConferenciaPage() {
       setSearchInput('')
       searchRef.current?.focus()
     } else {
-      const alreadyChecked = items.find(item => {
-        const nomeItem = item.os.toUpperCase().replace(/\./g, '')
-        const osNumItem = item.arquivo.toUpperCase().replace(/^HOME\./, '').replace(/\./g, '')
-        const nomeMatches = nomeItem === nomeBusca || nomeItem.includes(nomeBusca)
-        const osMatches = osNumItem === osNumBusca
-        return nomeMatches && osMatches && item.conferido
-      })
+      const alreadyChecked = items.find(item => matchesItem(item) && item.conferido)
       
       if (alreadyChecked) {
         showMessage('error', `"${searchTerm}" já foi conferido`)
